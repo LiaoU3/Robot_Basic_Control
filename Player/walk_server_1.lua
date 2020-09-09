@@ -37,10 +37,9 @@ require('Body')
 require('Motion')
 require('dive')
 require('grip')
-require('socket')
 
 -------------- UDP COMMUNICATION FOR BODY KINEMATIC ----------
--- local socket_body = require "socket"
+local socket_body = require "socket"
 local udp_body = socket.udp()
 udp_body:settimeout(0)
 udp_body:setsockname('*', 8080)
@@ -48,26 +47,18 @@ local data_body, msg_or_ip_body, port_or_nil_body
 -------------------------------------------------------
 
 --------------- UDP COMMUNICATION FOR HEAD MOVEMENT --------------
--- local socket_head = require "socket"
+local socket_head = require "socket"
 local udp_head = socket.udp()
 udp_head:settimeout(0)
 udp_head:setsockname('*', 8081)
 local data_head, msg_or_ip_head, port_or_nil_head
 ---------------------------------------------------
 
---------------- UDP COMMUNICATION FOR FOOT COMP --------------
--- local socket_comp = require "socket"
-local udp_comp = socket.udp()
-udp_comp:settimeout(0)
-udp_comp:setsockname('*', 8082)
-local data_comp, msg_or_ip_comp, port_or_nil_comp
----------------------------------------------------
-
 --------------- UDP COMMUNICATION FOR BUTTON --------------
 local socket_button = require "socket"
 local udp_button = socket.udp()
 udp_button:settimeout(0)
-udp_button:setpeername("127.0.0.1", 8083)
+udp_button:setpeername("127.0.0.1", 8082)
 ---------------------------------------------------
 
 Motion.entry();
@@ -80,7 +71,6 @@ if(Config.platform.name == 'OP') then
   --SJ: OP specific initialization posing (to prevent twisting)
 --  Body.set_body_hardness(0.3);
 --  Body.set_actuator_command(Config.stance.initangle)
-  footXComp = Config.walk.footXComp;
 end
 
 --TODO: enable new nao specific
@@ -96,7 +86,6 @@ webots = false;
 init = false;
 calibrating = false;
 ready = false;
-backward = false;
 if( webots or darwin) then
   ready = true;
 end
@@ -134,115 +123,70 @@ end
 
 os.execute("screen -d player");
 function process_keyinput()  
+  
   --hanjaya
   data_body, msg_or_ip_body, port_or_nil_body = udp_body:receivefrom(20)
   if data_body ~= nil then
-    -- print(data_body)
+    print(data_body)
     if data_body then
       --print(data_body)
       local byte=string.byte(data_body);
-      
       if (data_body=="stand") then	
         Motion.event("standup");
         closeGripper();
-      
       elseif (data_body=="start") then	
         Motion.event("start");
         walk.start();
-      
       elseif (data_body=="stop") then	
         if walk.active then walk.stop(); end
-     
       elseif (data_body=="sit") then	
-        Motion.event("sit");
-           
+	      Motion.event("sit");
       else 
-	      local body_data = data_body:split(" ")
-
-        -- Walking velocity
-        if (body_data[1]=="walk") then
+	      local parseData = data_body:split(" ")
+        if (parseData[1]=="walk") then
           if walk.active then 
-            walk.set_velocity(tonumber(body_data[2]),tonumber(body_data[3]),tonumber(body_data[4]));
-            if tonumber(body_data[2]) < 0 then
-              backward = true;
-            else
-              backward = false;
-            end
+            walk.set_velocity(tonumber(parseData[2]),tonumber(parseData[3]),tonumber(parseData[4]));
+--            if tonumber(parseData[2]) <= 0 then
+--              walk.stepHeight = 0.045;
+              -- walk.footXComp = -0.009
+--              mcm.set_walk_footXComp(-0.009);              
+--            else
+--              walk.stepHeight = 0.065;
+--            end
           else
             walk.start();
           end
-		      -- print("X:",body_data[2], "Y:",body_data[3], "A:",body_data[4])
-
-        -- Kick
-        elseif (body_data[1]=="action") then
-		      --print("Action:",body_data[2])
-		      if(tonumber(body_data[2]) == 1) then
+		      print("X:",parseData[2], "Y:",parseData[3], "A:",parseData[4])
+	      elseif (parseData[1]=="action") then
+		      --print("Action:",parseData[2])
+		      if(tonumber(parseData[2]) == 1) then
 		        kick.set_kick("kickForwardLeft");		        
-		      elseif(tonumber(body_data[2]) == 2) then
+		      elseif(tonumber(parseData[2]) == 2) then
 		        kick.set_kick("kickForwardRight");		        
           end		
           Motion.event("kick");
-
-        -- Gripper
-        elseif (body_data[1]=="grip") then
-		      --print(body_data[2])
-		      if(tonumber(body_data[2]) == 1) then
+	      elseif (parseData[1]=="grip") then
+		      --print(parseData[2])
+		      if(tonumber(parseData[2]) == 1) then
+		        --print("close");
 		        closeGripper();
 		      else 
+		        --print("open");
 		        openGripper();
 		      end
 	      end
       end
-
-      -- for walking in the begining
       --walk.set_velocity(unpack(targetvel));
     end
   end
-  
-  -- Head Movement
-  data_head, msg_or_ip_head, port_or_nil_head = udp_head:receivefrom()
-  if data_head then
-    -- print(data_head)
-    local head_angle = data_head:split(" ")
-    Body.set_head_hardness(1);
-    Body.set_head_command({tonumber(head_angle[2]),tonumber(head_angle[3])});
-
-  elseif msg_or_ip_head ~= 'timeout' then
-  end
-
-  -- Foot X Comp
-  data_comp, msg_or_ip_comp, port_or_nil_comp = udp_comp:receivefrom()
-  if data_comp then
-    print(data_comp)
-    local footXComp = data_comp:split(" ")[2] 
-    mcm.set_walk_footXComp(tonumber(footXComp));
-
-  elseif msg_or_ip_comp ~= 'timeout' then
-  end
-end
-
-function balance_xcomp()
-  local imuAngle=vector.new(Body.get_sensor_imuAngle())*180/math.pi;
-  -- print(string.format("Angle: %.1f %.1f %.1f ",unpack(imuAngle)));
-
-  if backward then
-    -- print(string.format("Angle: %.1f %.1f %.1f ",unpack(imuAngle)));
-    -- print(string.format("Pitch: %.1f",imuAngle[2]));
-    error_p   = imuAngle[2] - 18.0;
-    p_xcomp   = error_p * 0.0005;
-    p_xcomp = p_xcomp * -1;
-    ap_xcomp = p_xcomp + footXComp;
-    ap_xcomp = tonumber(string.format("%.4f", ap_xcomp))
-
-    --  limiter
-    if ap_xcomp >= -0.003 then
-      ap_xcomp = -0.003
-    elseif ap_xcomp <= -0.015 then
-      ap_xcomp = -0.015
-    end
-    -- print(string.format("Balance x_comp: %.4f", ap_xcomp));
-    mcm.set_walk_footXComp(ap_xcomp);
-  end
+    data_head, msg_or_ip_head, port_or_nil_head = udp_head:receivefrom()
+    if data_head then
+      -- print(data_head)
+      local head_angle = data_head:split(" ")
+      Body.set_head_hardness(1);
+      Body.set_head_command({tonumber(head_angle[2]),tonumber(head_angle[3])});
+   elseif msg_or_ip_head ~= 'timeout' then
+   end
 end
 
 -- main loop
@@ -280,12 +224,10 @@ function update()
       end
     end
   else
-
     -- update state machines 
     process_keyinput();
     Motion.update();
     Body.update();
-    -- balance_xcomp();
   end
   local dcount = 50;
   if (count % 50 == 0) then
@@ -304,7 +246,6 @@ function update()
     lcount = count;
   end
 
-  -- read button state
   if (Body.get_change_state() == 1) then button_pressed[1]=1;
   else                                   button_pressed[1]=0;
   end
@@ -317,25 +258,25 @@ function update()
   datagram = string.format("%d %d", unpack(button_pressed)) 
   udp_button:send(datagram)
 
-  -- --Stop walking if button is pressed and the released
-  -- if (Body.get_change_state() == 1) then
-  --   button_pressed[1]=1;
-  -- else
-  --   if button_pressed[1]==1 then
-  --     Motion.event("sit");
-  --   end
-  --   button_pressed[1]=0;
-  -- end
+  --Stop walking if button is pressed and the released
+  if (Body.get_change_state() == 1) then
+    button_pressed[1]=1;
+  else
+    if button_pressed[1]==1 then
+      Motion.event("sit");
+    end
+    button_pressed[1]=0;
+  end
 
-  -- --stand up if button is pressed and the released
-  -- if (Body.get_change_role() == 1) then
-  --   button_pressed[2]=1;
-  -- else
-  --   if button_pressed[2]==1 then
-  --     Motion.event("standup");
-  --   end
-  --   button_pressed[2]=0;
-  -- end
+  --stand up if button is pressed and the released
+  if (Body.get_change_role() == 1) then
+    button_pressed[2]=1;
+  else
+    if button_pressed[2]==1 then
+      Motion.event("standup");
+    end
+    button_pressed[2]=0;
+  end
   
 end
 
